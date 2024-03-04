@@ -110,15 +110,40 @@ const RecordingScreen: React.FC = () => {
     setRecording(null);
   };
 
-  const playPauseAudio = async () => {
+  const handlePlayPause = async () => {
     if (!sound) return;
     const status = await sound.getStatusAsync();
+    if ('isLoaded' in status && status.isLoaded) {
     if (status.isPlaying) {
       sound.pauseAsync();
     } else {
       sound.playAsync();
     }
+  } else {
+    console.error("Audio file is not loaded.");
+  }
   };
+
+  const handleSeekForward = async () => {
+    if (!sound) return;
+    const status = await sound.getStatusAsync();
+    if ('isLoaded' in status && status.isLoaded) {
+      await sound.setPositionAsync(status.positionMillis + 10000); // Forward 10 seconds
+    } else {
+      console.error("Audio file is not loaded.");
+    }
+  };
+
+  const handleSeekBackward = async () => {
+    if (!sound) return;
+    const status = await sound.getStatusAsync();
+    if ('isLoaded' in status && status.isLoaded) {
+      await sound.setPositionAsync(Math.max(0, status.positionMillis - 10000)); // Backward 10 seconds
+    } else {
+      console.error("Audio file is not loaded.");
+    }
+  };
+
 
   return (
     <View style={styles.container}>
@@ -133,7 +158,11 @@ const RecordingScreen: React.FC = () => {
       ) : (
         <>
           <Text>{transcript}</Text>
-          <Button title="Play/Pause" onPress={playPauseAudio} />
+
+          <Button title="Backward 10s" onPress={handleSeekBackward} />
+          <Button title="Play/Pause" onPress={handlePlayPause} />
+          <Button title="Forward 10s" onPress={handleSeekForward} />
+
         </>
       )}
     </View>
