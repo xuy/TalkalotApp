@@ -10,6 +10,7 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Audio } from 'expo-av'
+import { Ionicons } from '@expo/vector-icons'
 
 interface RecordingItem {
   id: string
@@ -49,6 +50,32 @@ const HomeScreen: React.FC = () => {
     await sound.playAsync()
   }
 
+  const RecordingItemC = ({ item, onPress }) => {
+    // Format the date
+    const date = new Date(item.date)
+    const formattedDate = new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(date)
+
+    return (
+      <TouchableOpacity onPress={onPress} style={styles.itemContainer}>
+        <View style={styles.itemTextContainer}>
+          <Text style={styles.titleText}>{item.displayName}</Text>
+          <Text style={styles.dateText}>{formattedDate}</Text>
+        </View>
+        <Ionicons name="play-sharp" size={24} color="black" />
+      </TouchableOpacity>
+    )
+  }
+
+  const handlePressRecordingItem = (recordingId: string) => {
+    navigation.navigate('Recording', { recordingId: recordingId })
+  }
+
   return (
     <View style={styles.container}>
       <FlatList
@@ -56,16 +83,10 @@ const HomeScreen: React.FC = () => {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={styles.listItem}>
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate('Recording', { recordingId: item.id })
-              }
-            >
-              <Text>
-                {item.displayName} - {new Date(item.date).toLocaleString()}
-              </Text>
-            </TouchableOpacity>
-            <Button title="Play" onPress={() => playSound(item.uri)} />
+            <RecordingItemC
+              item={item}
+              onPress={() => handlePressRecordingItem(item.id)}
+            />
           </View>
         )}
       />
@@ -109,6 +130,23 @@ const styles = StyleSheet.create({
     fontSize: 40,
     color: '#ffffff',
     textAlign: 'center',
+  },
+  itemContainer: {
+    flexDirection: 'row',
+    padding: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  itemTextContainer: {
+    flex: 1,
+  },
+  titleText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  dateText: {
+    fontSize: 12,
+    color: 'grey',
   },
 })
 
