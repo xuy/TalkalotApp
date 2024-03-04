@@ -14,6 +14,10 @@ import { Audio } from 'expo-av'
 import 'react-native-get-random-values' // do it before uuid
 import { v4 as uuidv4 } from 'uuid'
 import { Ionicons } from '@expo/vector-icons'
+import { logger } from 'react-native-logs'
+import * as FileSystem from 'expo-file-system'
+
+var log = logger.createLogger()
 
 type RecordingScreenRouteProp = RouteProp<
   {
@@ -100,11 +104,11 @@ const RecordingScreen: React.FC = () => {
           )
         }
       } catch (error) {
-        console.error('Error saving new title:', error)
+        log.error('Error saving new title:', error)
         Alert.alert('Error', 'Failed to save the new title.')
       }
     } else {
-      console.log('cannot save title when there is no recording target')
+      log.info('cannot save title when there is no recording target')
     }
   }
   // =========== Title Editing  =================
@@ -117,10 +121,10 @@ const RecordingScreen: React.FC = () => {
         if (recordingDetailsJson) {
           const recordingDetails = JSON.parse(recordingDetailsJson)
           setEditableTitle(recordingDetails.displayName)
+
           // Initialize originalTitle as well, if needed
           setOriginalTitle(recordingDetails.displayName)
           const { uri, transcript } = recordingDetails
-          console.log('file uri is ', uri)
           // Load the recording for playback
           const { sound } = await Audio.Sound.createAsync({ uri: uri })
           setSound(sound)
@@ -129,7 +133,7 @@ const RecordingScreen: React.FC = () => {
           Alert.alert('Recording not found')
         }
       } catch (error) {
-        console.error('Error loading recording details:', error)
+        log.error('Error loading recording details:', error)
         Alert.alert('Error loading recording')
       }
     } else {
@@ -144,15 +148,15 @@ const RecordingScreen: React.FC = () => {
       return
     }
     try {
-      console.log('Starting recording...')
+      log.info('Starting recording...')
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       )
       setRecording(recording)
       setIsRecording(true)
-      console.log('Recording started')
+      log.info('Recording started')
     } catch (error) {
-      console.error('Failed to start recording:', error)
+      log.error('Failed to start recording:', error)
     }
   }
 
@@ -160,11 +164,13 @@ const RecordingScreen: React.FC = () => {
     if (!recording) return
     setIsRecording(false)
     await recording.stopAndUnloadAsync()
+    const recordingMetadata = await recording.getStatusAsync()
+    const durationInSeconds = recordingMetadata.durationMillis / 1000
+
     const uri = recording.getURI()
     const id = uuidv4() // Generate a UUID for the filename
     const fileName = `${id}.m4a`
     const displayName = 'Untitled'
-    console.log('Recording stopped and stored at', uri)
 
     const metadata = {
       id,
@@ -172,11 +178,25 @@ const RecordingScreen: React.FC = () => {
       displayName,
       fileName,
       date: new Date().toISOString(),
+      duration: durationInSeconds,
     }
 
     await AsyncStorage.setItem(id, JSON.stringify(metadata))
     setRecording(null)
   }
+
+  const deleteRecording = async () => {
+    if (recordingId) {
+      const recordingDetailsJson = await AsyncStorage.getItem(recordingId)
+      if (recordingDetailsJson) {
+        const recordingDetails = JSON.parse(recordingDetailsJson)
+        await FileSystem.deleteAsync(recordingDetails.uri)
+        await AsyncStorage.removeItem(recordingId)
+        navigation.goBack()
+      }
+    }
+  }
+
   // ===========  Recording  =================
 
   // ===========  Playback  =================
@@ -192,7 +212,7 @@ const RecordingScreen: React.FC = () => {
         setIsPlaying(true)
       }
     } else {
-      console.error('Audio file is not loaded.')
+      log.error('Audio file is not loaded.')
     }
   }
 
@@ -202,7 +222,7 @@ const RecordingScreen: React.FC = () => {
     if ('isLoaded' in status && status.isLoaded) {
       await sound.setPositionAsync(status.positionMillis + 10000) // Forward 10 seconds
     } else {
-      console.error('Audio file is not loaded.')
+      log.error('Audio file is not loaded.')
     }
   }
 
@@ -212,52 +232,56 @@ const RecordingScreen: React.FC = () => {
     if ('isLoaded' in status && status.isLoaded) {
       await sound.setPositionAsync(Math.max(0, status.positionMillis - 10000)) // Backward 10 seconds
     } else {
-      console.error('Audio file is not loaded.')
+      log.error('Audio file is not loaded.')
     }
   }
   // ===========  Playback  =================
-
   return (
     <View style={styles.container}>
       {!recordingId ? (
         <>
           {isRecording ? (
-            <Button title="Stop Recording" onPress={stopRecording} />
+            <TouchableOpacity onPress={stopRecording} style={styles.stopButton}>
+              <Ionicons
+                name={isRecording ? 'stop' : 'play'}
+                size={32}
+                color="black"
+              />
+            </TouchableOpacity>
           ) : (
             <Button title="Start Recording" onPress={startRecording} />
           )}
         </>
       ) : (
         <>
-          <View style={styles.titleContainer}>
-            {isEditing ? (
-              <>
-                <Text>dead</Text>
-                <TouchableOpacity onPress={handleCancelEdit}>
-                  <Ionicons name="close" size={24} color="black" />
-                </TouchableOpacity>
-                <TextInput
-                  value={editableTitle}
-                  onChangeText={setEditableTitle}
-                  autoFocus={true}
-                  style={styles.editableTitle}
-                />
-                <TouchableOpacity onPress={handleSaveTitle}>
-                  <Ionicons name="checkmark" size={24} color="black" />
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity onPress={() => startEditing()}>
-                  <Text style={styles.titleText}>
-                    {editableTitle || 'Tap to edit title'}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+          {isEditing ? (
+            <View style={styles.editableTitleContainer}>
+              <TouchableOpacity onPress={handleCancelEdit}>
+                <Ionicons name="close" size={24} color="black" />
+              </TouchableOpacity>
+              <TextInput
+                value={editableTitle}
+                onChangeText={setEditableTitle}
+                autoFocus={true}
+                style={styles.editableTitle}
+              />
+              <TouchableOpacity onPress={handleSaveTitle}>
+                <Ionicons name="checkmark" size={24} color="black" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.header}>
+              <TouchableOpacity onPress={() => startEditing()}>
+                <Text style={styles.titleText}>
+                  {editableTitle || 'Tap to edit title'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={deleteRecording}>
+                <Ionicons name="trash-bin" size={24} color="grey" />
+              </TouchableOpacity>
+            </View>
+          )}
 
-          <Text> Here here </Text>
           <Text>{transcript}</Text>
 
           <View style={styles.controlsContainer}>
@@ -293,13 +317,12 @@ const RecordingScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: 20,
   },
-  titleContainer: {
-    backgroundColor: 'lightblue',
+  editableTitleContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
     padding: 10,
   },
@@ -309,8 +332,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'grey',
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    width: '100%',
+  },
   titleText: {
-    flex: 1,
     fontSize: 20,
     fontWeight: 'bold',
   },
@@ -319,6 +347,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 20,
+    marginBottom: 40,
   },
   playButton: {
     width: 70,
@@ -344,6 +373,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#E1E1E1', // Light gray background, adjust color as needed
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  stopButton: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#E1E1E1', // Light gray background, adjust color as needed
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 20,
   },
 })
 
