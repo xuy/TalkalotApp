@@ -1,13 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { View, Button, StyleSheet, Alert, Text } from 'react-native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import "react-native-get-random-values";  // do it before uuid
 import { v4 as uuidv4 } from 'uuid';
 
+type RecordingScreenRouteProp = RouteProp<{ params: {
+  recordingId?: string
+} }, 'params'>;
+
 const RecordingScreen: React.FC = () => {
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [transcript, setTranscript] = useState<string | null>(null);
+
+  const route = useRoute<RecordingScreenRouteProp>();
+  const navigation = useNavigation();
+
+  const { recordingId } = route.params || {};
+
+  useEffect(() => {
+    if (recordingId) {
+      loadRecordingDetails();
+    } else {
+      startRecording();
+    }
+  }, [recordingId]);
 
   useEffect(() => {
     (async () => {
@@ -27,12 +47,38 @@ const RecordingScreen: React.FC = () => {
     })();
   }, []);
 
+  const loadRecordingDetails = async () => {
+    if (recordingId) {
+      try {
+        const recordingDetailsJson = await AsyncStorage.getItem(recordingId);
+        if (recordingDetailsJson) {
+          const recordingDetails = JSON.parse(recordingDetailsJson);
+          const { uri, displayName, transcript } = recordingDetails;
+          console.log("file uri is ", uri);
+          // Load the recording for playback
+          const { sound } = await Audio.Sound.createAsync({ uri: uri });
+          setSound(sound);
+          setTranscript(transcript || 'No transcript available.');
+        } else {
+          Alert.alert('Recording not found');
+        }
+      } catch (error) {
+        console.error('Error loading recording details:', error);
+        Alert.alert('Error loading recording');
+      }
+    } else {
+      // Handle new recording setup if needed
+    }
+  };
+
   const startRecording = async () => {
+    if (isRecording) {
+      return;
+    }
     try {
-      // Start recording
       console.log('Starting recording...');
       const { recording } = await Audio.Recording.createAsync(
-        Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
       setRecording(recording);
       setIsRecording(true);
@@ -42,7 +88,6 @@ const RecordingScreen: React.FC = () => {
     }
   };
 
-
   const stopRecording = async () => {
     if (!recording) return;
     setIsRecording(false);
@@ -50,11 +95,13 @@ const RecordingScreen: React.FC = () => {
     const uri = recording.getURI();
     const id = uuidv4(); // Generate a UUID for the filename
     const fileName = `${id}.m4a`;
+    const displayName = "Untitled";
     console.log('Recording stopped and stored at', uri);
 
     const metadata = {
       id,
       uri,
+      displayName,
       fileName,
       date: new Date().toISOString(),
     };
@@ -63,13 +110,32 @@ const RecordingScreen: React.FC = () => {
     setRecording(null);
   };
 
+  const playPauseAudio = async () => {
+    if (!sound) return;
+    const status = await sound.getStatusAsync();
+    if (status.isPlaying) {
+      sound.pauseAsync();
+    } else {
+      sound.playAsync();
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <Text>{isRecording ? 'Recording...' : 'Tap the button to start recording'}</Text>
-      <Button
-        title={isRecording ? 'Stop Recording' : 'Start Recording'}
-        onPress={isRecording ? stopRecording : startRecording}
-      />
+      {!recordingId ? (
+        <>
+          {isRecording ? (
+            <Button title="Stop Recording" onPress={stopRecording} />
+          ) : (
+            <Button title="Start Recording" onPress={startRecording} />
+          )}
+        </>
+      ) : (
+        <>
+          <Text>{transcript}</Text>
+          <Button title="Play/Pause" onPress={playPauseAudio} />
+        </>
+      )}
     </View>
   );
 };
