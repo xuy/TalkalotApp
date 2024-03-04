@@ -1,47 +1,53 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Button, FlatList } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Audio } from 'expo-av';
+import React, { useCallback, useState } from 'react'
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Button,
+  FlatList,
+} from 'react-native'
+import { useNavigation, useFocusEffect } from '@react-navigation/native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { Audio } from 'expo-av'
 
 interface RecordingItem {
-  id: string;
-  uri: string;
-  displayName: string;
-  fileName: string;
-  date: string;
+  id: string
+  uri: string
+  displayName: string
+  fileName: string
+  date: string
 }
 
 const HomeScreen: React.FC = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation()
   const navigateToRecording = () => {
-    navigation.navigate('Recording', { startRecording: true });
-  };
-  const [recordings, setRecordings] = useState<RecordingItem[]>([]);
+    navigation.navigate('Recording', { startRecording: true })
+  }
+  const [recordings, setRecordings] = useState<RecordingItem[]>([])
 
   const fetchRecordings = async () => {
-    const keys = await AsyncStorage.getAllKeys();
-    const items = await AsyncStorage.multiGet(keys);
+    const keys = await AsyncStorage.getAllKeys()
+    const items = await AsyncStorage.multiGet(keys)
     const recordings = items
-      .map(item => JSON.parse(item[1] || '{}') as RecordingItem)
-      .sort((a, b) => b.date.localeCompare(a.date)); // Sort by date in reverse chronological order
-    setRecordings(recordings);
-  };
+      .map((item) => JSON.parse(item[1] || '{}') as RecordingItem)
+      .sort((a, b) => b.date.localeCompare(a.date)) // Sort by date in reverse chronological order
+    setRecordings(recordings)
+  }
 
   useFocusEffect(
     useCallback(() => {
-      fetchRecordings();
+      fetchRecordings()
     }, [])
-  );
-
+  )
 
   const playSound = async (uri: string) => {
     const { sound } = await Audio.Sound.createAsync(
       { uri },
       { shouldPlay: true }
-    );
-    await sound.playAsync();
-  };
+    )
+    await sound.playAsync()
+  }
 
   return (
     <View style={styles.container}>
@@ -51,20 +57,27 @@ const HomeScreen: React.FC = () => {
         renderItem={({ item }) => (
           <View style={styles.listItem}>
             <TouchableOpacity
-                onPress={() => navigation.navigate('Recording', { recordingId: item.id })}
+              onPress={() =>
+                navigation.navigate('Recording', { recordingId: item.id })
+              }
             >
-              <Text>{item.displayName} - {new Date(item.date).toLocaleString()}</Text>
+              <Text>
+                {item.displayName} - {new Date(item.date).toLocaleString()}
+              </Text>
             </TouchableOpacity>
             <Button title="Play" onPress={() => playSound(item.uri)} />
           </View>
         )}
       />
-      <TouchableOpacity onPress={navigateToRecording} style={styles.recordButton}>
+      <TouchableOpacity
+        onPress={navigateToRecording}
+        style={styles.recordButton}
+      >
         <Text style={styles.recordButtonText}>⬤</Text>
       </TouchableOpacity>
     </View>
-  );
-};
+  )
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -97,6 +110,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     textAlign: 'center',
   },
-});
+})
 
-export default HomeScreen;
+export default HomeScreen
