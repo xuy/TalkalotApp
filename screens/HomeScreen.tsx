@@ -1,30 +1,69 @@
-import React from 'react';
-import { View, Text, StyleSheet, Button } from 'react-native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
-import { RootStackParamList } from "../App"; // Adjust the import path as necessary
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Button, FlatList } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Audio } from 'expo-av';
 
-type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
+interface RecordingItem {
+  id: string;
+  uri: string;
+  fileName: string;
+  date: string;
+}
 
 const HomeScreen: React.FC = () => {
-  const navigation = useNavigation<HomeScreenNavigationProp>();
+  const [recordings, setRecordings] = useState<RecordingItem[]>([]);
+
+  useEffect(() => {
+    const fetchRecordings = async () => {
+      const keys = await AsyncStorage.getAllKeys();
+      const items = await AsyncStorage.multiGet(keys);
+      const recordings = items
+        .map(item => JSON.parse(item[1] || '{}') as RecordingItem)
+        .sort((a, b) => b.date.localeCompare(a.date)); // Sort by date in reverse chronological order
+      setRecordings(recordings);
+    };
+
+    fetchRecordings();
+  }, []);
+
+  const playSound = async (uri: string) => {
+    const { sound } = await Audio.Sound.createAsync(
+      { uri },
+      { shouldPlay: true }
+    );
+    await sound.playAsync();
+  };
 
   return (
     <View style={styles.container}>
-      <Text>List of Recordings</Text>
-      <Button
-        title="Record"
-        onPress={() => navigation.navigate('Recording')}
+      <FlatList
+        data={recordings}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={styles.listItem}>
+            <Text>{item.fileName} - {new Date(item.date).toLocaleString()}</Text>
+            <Button title="Play" onPress={() => playSound(item.uri)} />
+          </View>
+        )}
       />
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  listItem: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
   },
 });
 

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Button, StyleSheet, Alert, Text } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
+import "react-native-get-random-values";  // do it before uuid
+import { v4 as uuidv4 } from 'uuid';
 
 const RecordingScreen: React.FC = () => {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -39,13 +42,24 @@ const RecordingScreen: React.FC = () => {
     }
   };
 
+
   const stopRecording = async () => {
     if (!recording) return;
     setIsRecording(false);
     await recording.stopAndUnloadAsync();
     const uri = recording.getURI();
+    const id = uuidv4(); // Generate a UUID for the filename
+    const fileName = `${id}.m4a`;
     console.log('Recording stopped and stored at', uri);
-    // Here you might want to handle the recording (e.g., save the recording URI to state, AsyncStorage, or backend)
+
+    const metadata = {
+      id,
+      uri,
+      fileName,
+      date: new Date().toISOString(),
+    };
+
+    await AsyncStorage.setItem(id, JSON.stringify(metadata));
     setRecording(null);
   };
 
