@@ -7,6 +7,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  ScrollView,
 } from 'react-native'
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -16,6 +17,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { Ionicons } from '@expo/vector-icons'
 import { logger } from 'react-native-logs'
 import * as FileSystem from 'expo-file-system'
+import { OPENAI_API_KEY } from '../apiKeys'
 
 var log = logger.createLogger()
 
@@ -32,6 +34,7 @@ const RecordingScreen: React.FC = () => {
   // Recording
   const [isRecording, setIsRecording] = useState<boolean>(false)
   const [recording, setRecording] = useState<Audio.Recording | null>(null)
+  const [uri, setUri] = useState<string | null> (null)
 
   // Play back
   const [isPlaying, setIsPlaying] = useState<boolean>(false)
@@ -121,14 +124,12 @@ const RecordingScreen: React.FC = () => {
         if (recordingDetailsJson) {
           const recordingDetails = JSON.parse(recordingDetailsJson)
           setEditableTitle(recordingDetails.displayName)
-
-          // Initialize originalTitle as well, if needed
           setOriginalTitle(recordingDetails.displayName)
-          const { uri, transcript } = recordingDetails
+          setUri(recordingDetails.uri)
           // Load the recording for playback
-          const { sound } = await Audio.Sound.createAsync({ uri: uri })
+          const { sound } = await Audio.Sound.createAsync({ uri: recordingDetails.uri })
           setSound(sound)
-          setTranscript(transcript || 'No transcript available.')
+          setTranscript(recordingDetails.transcript || 'No transcript available.')
         } else {
           Alert.alert('Recording not found')
         }
@@ -236,6 +237,44 @@ const RecordingScreen: React.FC = () => {
     }
   }
   // ===========  Playback  =================
+
+
+  // ===========  Transcribe  =================
+  const handleTranscribe = async() => {
+    if (!uri) return
+    const content = await FileSystem.readAsStringAsync(uri, 'base64')
+    const formData = new FormData()
+    formData.append('model', 'whisper-1')
+    formData.append('response_format', 'json')
+    formData.append('language', 'en')
+    formData.append('file', content)
+    log.info("file content I got is ", content)
+
+    log.info("The API Key is ", OPENAI_API_KEY)
+
+    fetch('https://api.openai.com/v1/audio/transcriptions',  {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'multipart/form-data',
+      },
+      body: formData
+  }).then(
+    response => {
+      if (!response.ok) {
+        log.error(response.status, response.statusText)
+      }
+      // log.info("response from OpenAI is ", response.json())
+      return response.json()
+    }
+  ).then(data => 
+    {
+      log.info("The data from response is ", data)
+      setTranscript(data)
+    }).catch(error => log.error("error transcirbing", error))
+  }
+
+
   return (
     <View style={styles.container}>
       {!recordingId ? (
@@ -281,8 +320,13 @@ const RecordingScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           )}
-
-          <Text>{transcript}</Text>
+          
+          <ScrollView style={styles.transcriptContainer}>
+            <Text>{transcript}</Text>
+          </ScrollView>
+          <TouchableOpacity onPress={handleTranscribe} style={styles.transcribeButton}>
+            <Ionicons name="language" size={24} color="black" />
+          </TouchableOpacity>
 
           <View style={styles.controlsContainer}>
             <TouchableOpacity
@@ -383,6 +427,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 20,
   },
+  transcribeButton: {
+
+  },
+  transcriptContainer: {
+    backgroundColor: '#E2E2E2'
+  }
 })
 
 export default RecordingScreen
