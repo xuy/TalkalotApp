@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "TalkalotApp",
-    "slug": "TalkalotApp",
+    "name": "talkalotApp",
+    "slug": "talkalotApp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

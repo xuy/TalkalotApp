@@ -11,13 +11,15 @@ import {
 } from 'react-native'
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+// import ReactNativeBlobUtil from 'react-native-blob-util'
 import { Audio } from 'expo-av'
 import 'react-native-get-random-values' // do it before uuid
 import { v4 as uuidv4 } from 'uuid'
 import { Ionicons } from '@expo/vector-icons'
 import { logger } from 'react-native-logs'
 import * as FileSystem from 'expo-file-system'
-import { OPENAI_API_KEY } from '../apiKeys'
+
+import { OPENAI_API_KEY, GOOGLE_GCS_KEY, GOOGLE_GCS_SECRET } from '../apiKeys'
 
 var log = logger.createLogger()
 
@@ -240,17 +242,33 @@ const RecordingScreen: React.FC = () => {
 
 
   // ===========  Transcribe  =================
-  const handleTranscribe = async() => {
-    if (!uri) return
-    const content = await FileSystem.readAsStringAsync(uri, 'base64')
+  const fillForm = async (uri: string) => {
     const formData = new FormData()
+    try {
+      log.info("about to read file ", uri)
+      const response = await fetch(uri);  // read the file
+      const blob = await response.blob(); // convert to blob
+      log.info("the blob content is ", blob)
+      formData.append('file', blob)
+    } catch (error) {
+      log.error("error in reading files", error)
+    }
+    log.info("finished reading file blob", formData)
     formData.append('model', 'whisper-1')
     formData.append('response_format', 'json')
     formData.append('language', 'en')
-    formData.append('file', content)
-    log.info("file content I got is ", content)
+    return formData
+  }
 
-    log.info("The API Key is ", OPENAI_API_KEY)
+
+  // Attempt 2:     Use fetch(uri) and convert it to blob.
+  // Hypothesis:    It's all binary 
+  // Error:         This does not work but the reason is unclear to me.
+  // The blob using "fetch" above should be in binary format. However,
+  // blob returned from fetch is empty.
+  const handleTranscribe = async() => {
+    if (!uri) return
+    const formData = await fillForm(uri)
 
     fetch('https://api.openai.com/v1/audio/transcriptions',  {
       method: 'POST',
@@ -259,20 +277,194 @@ const RecordingScreen: React.FC = () => {
         'Content-Type': 'multipart/form-data',
       },
       body: formData
-  }).then(
-    response => {
-      if (!response.ok) {
-        log.error(response.status, response.statusText)
+    }).then(async response => {
+        if (!response.ok) {
+          const errorData = await response.json()
+          log.error(response.status, JSON.stringify(errorData))
+          throw new Error('Erroro during fetch')
+        }
+        const data = await response.json()
+        log.info("response from OpenAI is ", data)
+        return data
       }
-      // log.info("response from OpenAI is ", response.json())
-      return response.json()
-    }
-  ).then(data => 
-    {
-      log.info("The data from response is ", data)
-      setTranscript(data)
-    }).catch(error => log.error("error transcirbing", error))
+    ).then(data => 
+      {
+        log.info("The data from response is ", data)
+        setTranscript(data)
+      }).catch(error => log.error("error transcirbing", error))
   }
+
+  // Attempt 2:     Using ReactNativeFileSystem.uploadFiles.
+  // Hypothesis:    RNFS supports binary upload.
+  // Error:         Unclear why importing RNFS fails at import time.
+  const handleTranscribe2 = async () => {
+    if (!uri) return
+
+    var options = {
+      toUrl: 'https://api.openai.com/v1/audio/transcriptions',
+      binaryStreamOnly: true,
+      files: [{
+        name: 'file',
+
+        filename: 'audio.m4a',
+        filepath: RNFS.wrap(uri),
+      }],
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'multipart/form-data',
+      },
+      fields: {
+        'model': 'whisper-1',
+        'response_format': 'json',
+        'language': 'en'
+      },
+      begin: (res: any) => {
+        console.log('begin', res);
+      },
+      progress: (res: any) => {
+        var progress = (res.bytesSent / res.contentLength) * 100;
+        console.log('progress', progress);
+      }
+    };
+    // const D = {promise: Promise.resolve({statusCode: 200, body: "hello"})}
+    const D = RNFS.uploadFiles(options)
+    D.promise
+      .then(res => {
+        if (res.statusCode == 200) {
+          console.log('FILES UPLOADED!', res);
+          setTranscript(res.body)
+          return res.body
+        } else {
+          console.log('SERVER ERROR');
+        }
+      })
+      .catch(err => {
+        if (err.description === "cancelled") {
+          // cancelled by user
+        }
+        console.log(err);
+      });
+      return "Empty return from upload"
+  }
+  
+  // Attempt 3:     Using FileSystem.uploadAsync.
+  // Hypothesis:    This method could directly support binary upload
+  // Error:         Opaque: cannot convert '[object Object]' to a Kotlin type in FileSystem.uploadAsync
+  //                Likely there is some format conversion in file reading.
+  const handleTranscribe3 = async (fileUri: string) => {
+    const url = 'https://api.openai.com/v1/audio/transcriptions';
+    const options = {
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'multipart/form-data',
+        },
+        // Default is POST
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        parameters: {
+            model: 'whisper-1', // Additional form fields, if necessary
+            response_format: 'json',
+            language: 'en'
+        },
+    };
+
+    var response;
+    try {
+      log.info("the options are", JSON.stringify(options))
+      // Error here. I cannot seem to use this uploadAsync method.
+      // Cannot convert [object Object] to a Kotlin type.  
+      response = await FileSystem.uploadAsync(url, fileUri, options);
+    } catch (error) {
+      log.error("This is in upload right???", error)
+    }
+    try {
+        const result = JSON.parse(response.body); // Assuming the response is in JSON format
+        // Do something with the transcription result
+        log.info(result);
+        log.info(JSON.stringify(result))
+        setTranscript(JSON.stringify(result))
+        return result;
+    } catch (error) {
+      log.info(error.stack)
+      var errorMsg = ""
+      if (error instanceof Error) {
+        errorMsg = error.message
+      } else if (typeof error === 'object') {
+        errorMsg = JSON.stringify(error)
+      }
+      log.error('Transcription error:', errorMsg);
+      return "error"
+    }
+  }
+
+
+  // /// ====================== GCS ======================================
+  // // Initialize the Google Cloud Storage client
+  // const storage = new Storage({
+  //   projectId: 'aicodes-newbase',
+  //     credentials: {
+  //       client_email: 'your-service-account-email',
+  //       private_key: 'your-service-account-private-key',
+  //     },
+  //   });
+
+  // Using GCS
+  const handleUplooad = async(uri: string) => {
+      try {
+        const bucket = storage.bucket('your-bucket-name');
+        const file = bucket.file(fileName);
+
+        await file.save(uri, {
+          contentType: 'audio/x-m4a', // Set the appropriate MIME type for your file
+          public: true, // Set to false if you don't want the files to be publicly accessible
+        });
+
+        console.log(`File ${fileName} uploaded successfully.`);
+        return `gs://${bucket.name}/${file.name}`;
+      } catch (error) {
+        console.error('Error uploading file:', error);
+        throw error;
+      }
+  }
+
+  // Attempt 5. using RNFetchBlob with native file
+  async function handleTranscribe5(fileUri: string) {
+    try {
+      const resp = await ReactNativeBlobUtil.fetch(
+        'POST',
+        'https://api.openai.com/v1/audio/transcriptions',
+        {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'multipart/form-data',
+        },
+        [
+          { 
+            name: 'file', 
+            filename: "test", 
+            type: "m4a", 
+            data: ReactNativeBlobUtil.wrap(fileUri) 
+          },
+          {
+            name: "model",
+            data: "whisper-1"
+          },
+          {
+            name: "response_format",
+            data: "json"
+          },
+          {
+            name: "language",
+            data: "en"
+          }
+        ]
+      );
+      const responseData = resp.json(); 
+      console.log(responseData); 
+      return responseData;
+    } catch (err) {
+      console.error('Upload Error:', err);
+    }
+  }
+
 
 
   return (
@@ -324,7 +516,7 @@ const RecordingScreen: React.FC = () => {
           <ScrollView style={styles.transcriptContainer}>
             <Text>{transcript}</Text>
           </ScrollView>
-          <TouchableOpacity onPress={handleTranscribe} style={styles.transcribeButton}>
+          <TouchableOpacity onPress={handleTranscribe3} style={styles.transcribeButton}>
             <Ionicons name="language" size={24} color="black" />
           </TouchableOpacity>
 
